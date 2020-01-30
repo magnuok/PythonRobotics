@@ -20,7 +20,9 @@ try:
 except ImportError:
     raise
 
-show_animation = True
+
+show_live_animation = False
+show_final_animation = True
 
 
 class RRTStar(RRT):
@@ -61,13 +63,17 @@ class RRTStar(RRT):
         animation: flag for animation on or off
         search_until_max_iter: search until max iteration for path improving or not
         """
-
+        # Init node_list and include start position
         self.node_list = [self.start]
+
         for i in range(self.max_iter):
-            print("Iter:", i, ", number of nodes:", len(self.node_list))
-            rnd = self.get_random_node()
-            nearest_ind = self.get_nearest_node_index(self.node_list, rnd)
-            new_node = self.steer(self.node_list[nearest_ind], rnd, self.expand_dis)
+            #print("Iter:", i, ", number of nodes:", len(self.node_list))
+
+            rnd_node = self.get_random_node()
+            # Get nearest index of rnd node.
+            nearest_ind = self.get_nearest_node_index(self.node_list, rnd_node)
+            
+            new_node = self.steer(self.node_list[nearest_ind], rnd_node, self.expand_dis)
 
             if self.check_collision(new_node, self.obstacle_list):
                 near_inds = self.find_near_nodes(new_node)
@@ -77,7 +83,7 @@ class RRTStar(RRT):
                     self.rewire(new_node, near_inds)
 
             if animation and i % 30 == 0:
-                self.draw_graph(rnd)
+                self.draw_graph(rnd_node)
 
             if (not search_until_max_iter) and new_node:  # check reaching the goal
                 last_index = self.search_best_goal_node()
@@ -178,7 +184,8 @@ def main():
     print("Start " + __file__)
 
     # ====Search Path with RRT====
-    obstacle_list = [
+
+    obstacleList = [ # [x, y, radius]
         (5, 5, 1),
         (3, 6, 2),
         (3, 8, 2),
@@ -186,15 +193,23 @@ def main():
         (7, 5, 2),
         (9, 5, 2),
         (8, 10, 1),
-        (6, 12, 1),
-    ]  # [x,y,size(radius)]
+        (50, 50, 10),
+        (50, 70, 10),
+        (70, 50, 10),
+        (80, 50, 10),]
 
     # Set Initial parameters
-    rrt_star = RRTStar(start=[0, 0],
-                       goal=[6, 10],
-                       rand_area=[-2, 15],
-                       obstacle_list=obstacle_list)
-    path = rrt_star.planning(animation=show_animation)
+    rrt_star = RRTStar(start = [20, 20],
+                       goal = [60, 60],
+                       obstacle_list = obstacleList,
+                       rand_area = [0, 100],
+                       expand_dis = 10,
+                       path_resolution = 0.5,
+                       goal_sample_rate = 20,
+                       max_iter = 3000,
+                       connect_circle_dist = 50)
+
+    path = rrt_star.planning(animation=show_live_animation)
 
     if path is None:
         print("Cannot find path")
@@ -202,7 +217,7 @@ def main():
         print("found path!!")
 
         # Draw final path
-        if show_animation:
+        if show_final_animation:
             rrt_star.draw_graph()
             plt.plot([x for (x, y) in path], [y for (x, y) in path], '-r')
             plt.grid(True)
