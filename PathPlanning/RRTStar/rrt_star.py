@@ -153,8 +153,15 @@ class RRTStar(RRT):
 
         nnode = len(self.node_list) + 1
         r = self.connect_circle_dist * math.sqrt((math.log(nnode) / nnode))
+
+        # Distance list
         dist_list = [(node.x - new_node.x) ** 2 +
                      (node.y - new_node.y) ** 2 for node in self.node_list]
+
+        # Angle list
+        angle_list = [abs(node.alpha - new_node.alpha) for node in self.node_list]
+
+        # TODO Working here
         near_inds = [dist_list.index(i) for i in dist_list if i <= r ** 2]
         return near_inds
 
