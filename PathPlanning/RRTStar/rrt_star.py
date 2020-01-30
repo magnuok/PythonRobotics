@@ -31,8 +31,8 @@ class RRTStar(RRT):
     """
 
     class Node(RRT.Node):
-        def __init__(self, x, y):
-            super().__init__(x, y)
+        def __init__(self, x, y, alpha):
+            super().__init__(x, y, alpha)
             self.cost = 0.0
 
     def __init__(self, start, goal, obstacle_list, rand_area,
@@ -54,7 +54,7 @@ class RRTStar(RRT):
 
         """
         self.connect_circle_dist = connect_circle_dist
-        self.goal_node = self.Node(goal[0], goal[1])
+        self.goal_node = self.Node(goal[0], goal[1], goal[2])
 
     def planning(self, animation=True, search_until_max_iter=True):
         """
@@ -149,6 +149,8 @@ class RRTStar(RRT):
         return None
 
     def find_near_nodes(self, new_node):
+        # TODO: Can add constraints here
+
         nnode = len(self.node_list) + 1
         r = self.connect_circle_dist * math.sqrt((math.log(nnode) / nnode))
         dist_list = [(node.x - new_node.x) ** 2 +
@@ -173,6 +175,7 @@ class RRTStar(RRT):
                 self.propagate_cost_to_leaves(new_node)
 
     def calc_new_cost(self, from_node, to_node):
+        # Distance cost
         d, _ = self.calc_distance_and_angle(from_node, to_node)
         return from_node.cost + d
 
@@ -203,14 +206,14 @@ def main():
         (80, 50, 10),]
 
     # Set Initial parameters
-    rrt_star = RRTStar(start = [20, 20],
-                       goal = [60, 60],
+    rrt_star = RRTStar(start = [20, 20, 0], # [x, y, theta]
+                       goal = [90, 90, 0], # [x, y, theta]
                        obstacle_list = obstacleList,
                        rand_area = [0, 100],
                        expand_dis = 10,
-                       path_resolution = 0.5,
+                       path_resolution = 1,
                        goal_sample_rate = 20,
-                       max_iter = 3000,
+                       max_iter = 1000,
                        connect_circle_dist = 50)
 
     path = rrt_star.planning(animation=show_live_animation)
@@ -219,14 +222,21 @@ def main():
         print("Cannot find path")
     else:
         print("found path!!")
+        # Print path
+        for i in reversed(path):
+            print(i)
+            #print(math.degrees(i[2]))
+            #print()
 
         # Draw final path
         if show_final_animation:
             rrt_star.draw_graph()
-            plt.plot([x for (x, y) in path], [y for (x, y) in path], '-r')
+            plt.plot([x for (x, y, alpha) in path], [y for (x, y, alpha) in path], '-r')
             plt.grid(True)
             plt.pause(0.01)  # Need for Mac
             plt.show()
+        
+        
 
 
 if __name__ == '__main__':

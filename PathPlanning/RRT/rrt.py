@@ -26,11 +26,12 @@ class RRT:
         RRT Node
         """
 
-        def __init__(self, x, y):
+        def __init__(self, x, y, alpha):
             self.x = x
             self.y = y
             self.path_x = []
             self.path_y = []
+            self.alpha = alpha
             self.parent = None
 
     def __init__(self, start, goal, obstacle_list, rand_area,
@@ -44,8 +45,8 @@ class RRT:
         randArea:Random Sampling Area [min,max]
 
         """
-        self.start = self.Node(start[0], start[1])
-        self.end = self.Node(goal[0], goal[1])
+        self.start = self.Node(start[0], start[1], start[2])
+        self.end = self.Node(goal[0], goal[1], goal[2])
         self.min_rand = rand_area[0]
         self.max_rand = rand_area[1]
         self.expand_dis = expand_dis
@@ -86,9 +87,11 @@ class RRT:
 
         return None  # cannot find path
 
-    def steer(self, from_node, to_node, extend_length=float("inf")):
+    def steer(self, from_node, to_node, extend_length = float("inf")):
 
-        new_node = self.Node(from_node.x, from_node.y)
+        new_node = self.Node(from_node.x, from_node.y, 0)
+        new_node.alpha = math.atan2(to_node.y - from_node.y, to_node.x - from_node.x)
+
         d, theta = self.calc_distance_and_angle(new_node, to_node)
 
         new_node.path_x = [new_node.x]
@@ -115,12 +118,12 @@ class RRT:
         return new_node
 
     def generate_final_course(self, goal_ind):
-        path = [[self.end.x, self.end.y]]
+        path = [[self.end.x, self.end.y, self.end.alpha]]
         node = self.node_list[goal_ind]
         while node.parent is not None:
-            path.append([node.x, node.y])
+            path.append([node.x, node.y, node.alpha])
             node = node.parent
-        path.append([node.x, node.y])
+        path.append([node.x, node.y, node.alpha])
 
         return path
 
@@ -130,11 +133,13 @@ class RRT:
         return math.hypot(dx, dy)
 
     def get_random_node(self):
+        # Angle not used. Passing in zero as argument
         if random.randint(0, 100) > self.goal_sample_rate:
             rnd = self.Node(random.uniform(self.min_rand, self.max_rand),
-                            random.uniform(self.min_rand, self.max_rand))
-        else:  # goal point sampling
-            rnd = self.Node(self.end.x, self.end.y)
+                            random.uniform(self.min_rand, self.max_rand),
+                            0                                          )
+        else:  # Goal point sampling
+            rnd = self.Node(self.end.x, self.end.y, 0)
         return rnd
 
     def draw_graph(self, rnd=None):
@@ -207,7 +212,7 @@ class RRT:
         return d, theta
 
 
-def main(gx=60, gy=60):
+def main(gx=60, gy=60, alpha=0):
     print("start " + __file__)
 
     # ====Search Path with RRT====
@@ -226,8 +231,8 @@ def main(gx=60, gy=60):
         (80, 50, 10),]
 
     # Set Initial parameters
-    rrt = RRT(start = [20, 20],
-              goal = [gx, gy],
+    rrt = RRT(start = [20, 20, 0],
+              goal = [gx, gy, 0],
               rand_area = [0, 100],       # Random Sampling Area [min,max]. (A square)
               obstacle_list = obstacleList,
               expand_dis = 1.5,
@@ -245,7 +250,7 @@ def main(gx=60, gy=60):
         # Draw final path
         if show_final_animation:
             rrt.draw_graph()
-            plt.plot([x for (x, y) in path], [y for (x, y) in path], '-r')
+            plt.plot([x for (x, y, alpha) in path], [y for (x, y, alpha) in path], '-r')
             plt.grid(True)
             plt.pause(0.01)  # Need for Mac
             plt.show()
