@@ -12,7 +12,8 @@ import random
 import matplotlib.pyplot as plt
 import numpy as np
 
-show_animation = True
+show_live_animation = False
+show_final_animation = True
 
 
 class RRT:
@@ -33,7 +34,7 @@ class RRT:
             self.parent = None
 
     def __init__(self, start, goal, obstacle_list, rand_area,
-                 expand_dis=3.0, path_resolution=0.5, goal_sample_rate=5, max_iter=500):
+                 expand_dis, path_resolution, goal_sample_rate, max_iter):
         """
         Setting Parameter
 
@@ -144,7 +145,10 @@ class RRT:
         if rnd is not None:
             plt.plot(rnd.x, rnd.y, "^k")
         for node in self.node_list:
+            # Node/vertex itself
+            plt.plot(node.x, node.y, "y.")
             if node.parent:
+                # edge between nodes
                 plt.plot(node.path_x, node.path_y, "-g")
 
         for (ox, oy, size) in self.obstacle_list:
@@ -153,9 +157,14 @@ class RRT:
         plt.plot(self.start.x, self.start.y, "xr")
         plt.plot(self.end.x, self.end.y, "xr")
         plt.axis("equal")
-        plt.axis([-2, 15, -2, 15])
+        plt.axis([self.min_rand, self.max_rand, self.min_rand, self.max_rand])
         plt.grid(True)
         plt.pause(0.01)
+        # Plot borders for area
+        plt.plot([self.min_rand, self.max_rand], [self.min_rand, self.min_rand], "k--")
+        plt.plot([self.min_rand, self.min_rand], [self.min_rand, self.max_rand], "k--")
+        plt.plot([self.min_rand, self.max_rand], [self.max_rand, self.max_rand], "k--")
+        plt.plot([self.max_rand, self.max_rand], [self.min_rand, self.max_rand], "k--")
 
     @staticmethod
     def plot_circle(x, y, size, color="-b"):  # pragma: no cover
@@ -198,33 +207,46 @@ class RRT:
         return d, theta
 
 
-def main(gx=6.0, gy=10.0):
+def main(gx=60, gy=60):
     print("start " + __file__)
 
     # ====Search Path with RRT====
-    obstacleList = [
+
+    obstacleList = [ # [x, y, radius]
         (5, 5, 1),
         (3, 6, 2),
         (3, 8, 2),
         (3, 10, 2),
         (7, 5, 2),
         (9, 5, 2),
-        (8, 10, 1)
-    ]  # [x, y, radius]
+        (8, 10, 1),
+        (50, 50, 10),
+        (50, 70, 10),
+        (70, 50, 10),
+        (80, 50, 10),
+
+
+    ]
+
     # Set Initial parameters
-    rrt = RRT(start=[0, 0],
-              goal=[gx, gy],
-              rand_area=[-2, 15],
-              obstacle_list=obstacleList)
-    path = rrt.planning(animation=show_animation)
+    rrt = RRT(start = [20, 20],
+              goal = [gx, gy],
+              rand_area = [0, 100],       # Random Sampling Area [min,max]. (A square)
+              obstacle_list = obstacleList,
+              expand_dis = 1.5,
+              path_resolution = 0.5,
+              goal_sample_rate = 0, # Biased towards goal in percentage 
+              max_iter = 4000)
+
+    path = rrt.planning(animation=show_live_animation)
 
     if path is None:
         print("Cannot find path")
     else:
-        print("found path!!")
+        print("Found path!")
 
         # Draw final path
-        if show_animation:
+        if show_final_animation:
             rrt.draw_graph()
             plt.plot([x for (x, y) in path], [y for (x, y) in path], '-r')
             plt.grid(True)
