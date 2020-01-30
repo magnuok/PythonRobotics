@@ -76,7 +76,7 @@ class RRTStar(RRT):
                     self.node_list.append(new_node)
                     self.rewire(new_node, near_inds)
 
-            if animation and i % 5 == 0:
+            if animation and i % 30 == 0:
                 self.draw_graph(rnd)
 
             if (not search_until_max_iter) and new_node:  # check reaching the goal
