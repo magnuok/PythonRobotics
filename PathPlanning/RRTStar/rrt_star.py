@@ -72,11 +72,12 @@ class RRTStar(RRT):
             rnd_node = self.get_random_node()
             # Get nearest index of rnd node.
             nearest_ind = self.get_nearest_node_index(self.node_list, rnd_node)
-            
+
             new_node = self.steer(self.node_list[nearest_ind], rnd_node, self.expand_dis)
 
             if self.check_collision(new_node, self.obstacle_list):
-                near_inds = self.find_near_nodes(new_node)
+                # Find nodes nearby new_node
+                near_inds = self.find_near_nodes(new_node)                
                 new_node = self.choose_parent(new_node, near_inds)
                 if new_node:
                     self.node_list.append(new_node)
@@ -99,10 +100,11 @@ class RRTStar(RRT):
         return None
 
     def choose_parent(self, new_node, near_inds):
+        # If no one close, return None and throw away the new_node
         if not near_inds:
             return None
 
-        # search nearest cost in near_inds
+        # Search through near_inds and find minimum cost
         costs = []
         for i in near_inds:
             near_node = self.node_list[i]
@@ -111,12 +113,14 @@ class RRTStar(RRT):
                 costs.append(self.calc_new_cost(near_node, new_node))
             else:
                 costs.append(float("inf"))  # the cost of collision node
+        
         min_cost = min(costs)
 
         if min_cost == float("inf"):
             print("There is no good path.(min_cost is inf)")
             return None
 
+        # Set parent to the one found with lowest cost
         min_ind = near_inds[costs.index(min_cost)]
         new_node = self.steer(self.node_list[min_ind], new_node)
         new_node.parent = self.node_list[min_ind]
