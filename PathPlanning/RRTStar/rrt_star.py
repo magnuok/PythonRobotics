@@ -99,14 +99,14 @@ class RRTStar(RRT):
 
         return None
 
-    def choose_parent(self, new_node, near_inds):
+    def choose_parent(self, new_node, filtered_inds):
         # If no one close, return None and throw away the new_node
-        if not near_inds:
+        if not filtered_inds:
             return None
 
         # Search through near_inds and find minimum cost
         costs = []
-        for i in near_inds:
+        for i in filtered_inds:
             near_node = self.node_list[i]
             t_node = self.steer(near_node, new_node)
             if t_node and self.check_collision(t_node, self.obstacle_list):
@@ -121,10 +121,11 @@ class RRTStar(RRT):
             return None
 
         # Set parent to the one found with lowest cost
-        min_ind = near_inds[costs.index(min_cost)]
+        min_ind = filtered_inds[costs.index(min_cost)]
         new_node = self.steer(self.node_list[min_ind], new_node)
         new_node.parent = self.node_list[min_ind]
         new_node.cost = min_cost
+        new_node.alpha = math.atan2(new_node.y - new_node.parent.y, new_node.x - new_node.parent.x)
 
         return new_node
 
@@ -149,21 +150,25 @@ class RRTStar(RRT):
         return None
 
     def find_near_nodes(self, new_node):
-        # TODO: Can add constraints here
 
         nnode = len(self.node_list) + 1
+
+        # TODO: Find source for calculation of the radius
         r = self.connect_circle_dist * math.sqrt((math.log(nnode) / nnode))
 
-        # Distance list
+        # First find nodes nearby
         dist_list = [(node.x - new_node.x) ** 2 +
                      (node.y - new_node.y) ** 2 for node in self.node_list]
-
-        # Angle list
-        angle_list = [abs(node.alpha - new_node.alpha) for node in self.node_list]
-
-        # TODO Working here
         near_inds = [dist_list.index(i) for i in dist_list if i <= r ** 2]
-        return near_inds
+
+        # For nearby nodes, filter nodes by angle constraint
+        near_nodes = [self.node_list[i] for i in near_inds]
+        angle_list = [abs( self.ssa(node.alpha - math.atan2(new_node.y - node.y, new_node.x - node.x))) for node in near_nodes]
+
+        filtered_inds = [near_inds[angle_list.index(i)] for i in angle_list if i <= math.pi/2]
+
+
+        return filtered_inds
 
     def rewire(self, new_node, near_inds):
         for i in near_inds:
@@ -193,6 +198,11 @@ class RRTStar(RRT):
                 node.cost = self.calc_new_cost(parent_node, node)
                 self.propagate_cost_to_leaves(node)
 
+    def ssa(self, angle):
+        # Smallest signed angle. Maps angle into interval [-pi pi]
+        wrpd_angle = (angle + math.pi) % (2*math.pi) - math.pi
+        return wrpd_angle
+
 
 def main():
     print("Start " + __file__)
@@ -200,29 +210,22 @@ def main():
     # ====Search Path with RRT====
 
     obstacleList = [ # [x, y, radius]
-        (5, 5, 1),
-        (3, 6, 2),
-        (3, 8, 2),
-        (3, 10, 2),
-        (7, 5, 2),
-        (9, 5, 2),
-        (8, 10, 1),
         (50, 50, 10),
         (50, 70, 10),
         (70, 50, 10),
-        (80, 50, 10),]
+        (90, 50, 10),
+        (10, 70, 10)]
 
     # Set Initial parameters
-    rrt_star = RRTStar(start = [20, 20, 0], # [x, y, theta]
+    rrt_star = RRTStar(start = [60, 20, 0], # [x, y, theta]
                        goal = [90, 90, 0], # [x, y, theta]
                        obstacle_list = obstacleList,
                        rand_area = [0, 100],
                        expand_dis = 10,
                        path_resolution = 1,
-                       goal_sample_rate = 20,
+                       goal_sample_rate = 10,
                        max_iter = 1000,
                        connect_circle_dist = 50)
-
     path = rrt_star.planning(animation=show_live_animation)
 
     if path is None:
