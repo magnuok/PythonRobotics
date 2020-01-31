@@ -90,8 +90,6 @@ class RRT:
     def steer(self, from_node, to_node, extend_length = float("inf")):
 
         new_node = self.Node(from_node.x, from_node.y, 0)
-        # TODO: Maybe unecassary
-        #new_node.alpha = math.atan2(to_node.y - from_node.y, to_node.x - from_node.x)
 
         d, theta = self.calc_distance_and_angle(new_node, to_node)
 

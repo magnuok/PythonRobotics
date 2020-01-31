@@ -34,6 +34,7 @@ class RRTStar(RRT):
         def __init__(self, x, y, alpha):
             super().__init__(x, y, alpha)
             self.cost = 0.0
+            self.cost2 = 0.0
 
     def __init__(self, start, goal, obstacle_list, rand_area,
                  expand_dis=3.0,
@@ -164,9 +165,7 @@ class RRTStar(RRT):
         # For nearby nodes, filter nodes by angle constraint
         near_nodes = [self.node_list[i] for i in near_inds]
         angle_list = [abs( self.ssa(node.alpha - math.atan2(new_node.y - node.y, new_node.x - node.x))) for node in near_nodes]
-
         filtered_inds = [near_inds[angle_list.index(i)] for i in angle_list if i <= math.pi/2]
-
 
         return filtered_inds
 
@@ -189,6 +188,10 @@ class RRTStar(RRT):
     def calc_new_cost(self, from_node, to_node):
         # Distance cost
         d, _ = self.calc_distance_and_angle(from_node, to_node)
+
+        # Curvature cost
+        rho = (2*math.tan(abs( from_node.alpha - to_node.alpha ))) / d
+
         return from_node.cost + d
 
     def propagate_cost_to_leaves(self, parent_node):
@@ -203,6 +206,11 @@ class RRTStar(RRT):
         wrpd_angle = (angle + math.pi) % (2*math.pi) - math.pi
         return wrpd_angle
 
+    def curvature_cost(self, from_node):
+        if not from_node.parent:
+            return from_node.cost2
+        return from_node.cost2 + self.curvature_cost(from_node.parent)
+        
 
 def main():
     print("Start " + __file__)
