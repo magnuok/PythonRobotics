@@ -25,6 +25,13 @@ show_live_animation = False
 show_final_animation = True
 
 
+def static_var(varName, value):
+    def decorate(function):
+        setattr(function,varName,value)
+        return function
+    return decorate
+
+
 class RRTStar(RRT):
     """
     Class for RRT Star planning
@@ -34,7 +41,7 @@ class RRTStar(RRT):
         def __init__(self, x, y, alpha):
             super().__init__(x, y, alpha)
             self.cost = 0.0
-            self.cost2 = 0.0
+            self.rho = 0.0
 
     def __init__(self, start, goal, obstacle_list, rand_area,
                  expand_dis=3.0,
@@ -188,11 +195,20 @@ class RRTStar(RRT):
     def calc_new_cost(self, from_node, to_node):
         # Distance cost
         d, _ = self.calc_distance_and_angle(from_node, to_node)
+        distance_cost = from_node.cost + d
 
         # Curvature cost
-        rho = (2*math.tan(abs( from_node.alpha - to_node.alpha ))) / d
+        if d == 0:
+            curvature_cost = float('Inf')
+        else:
+            to_node.rho = (2*math.tan(abs( from_node.alpha - to_node.alpha ))) / d
+            # initialize counter
+            RRTStar.curvature_cost.counter = 0
 
-        return from_node.cost + d
+            rho_sum = self.curvature_cost(from_node)
+            curvature_cost = rho_sum/RRTStar.curvature_cost.counter + to_node.rho
+
+        return distance_cost
 
     def propagate_cost_to_leaves(self, parent_node):
 
@@ -206,11 +222,14 @@ class RRTStar(RRT):
         wrpd_angle = (angle + math.pi) % (2*math.pi) - math.pi
         return wrpd_angle
 
+    @static_var('counter', 0)
     def curvature_cost(self, from_node):
+        # stash counter in the function itself
+        RRTStar.curvature_cost.counter += 1
         if not from_node.parent:
-            return from_node.cost2
-        return from_node.cost2 + self.curvature_cost(from_node.parent)
-        
+            return from_node.rho
+        return from_node.rho + self.curvature_cost(from_node.parent)
+
 
 def main():
     print("Start " + __file__)
@@ -229,10 +248,10 @@ def main():
                        goal = [90, 90, 0], # [x, y, theta]
                        obstacle_list = obstacleList,
                        rand_area = [0, 100],
-                       expand_dis = 10,
+                       expand_dis = 3,
                        path_resolution = 1,
                        goal_sample_rate = 10,
-                       max_iter = 1000,
+                       max_iter = 3000,
                        connect_circle_dist = 50)
     path = rrt_star.planning(animation=show_live_animation)
 
