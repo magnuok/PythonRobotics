@@ -42,6 +42,7 @@ class RRTStar(RRT):
             super().__init__(x, y, alpha)
             self.cost = 0.0
             self.rho = 0.0
+            self.d = 1.0
 
     def __init__(self, start, goal, obstacle_list, rand_area,
                  expand_dis=3.0,
@@ -134,6 +135,9 @@ class RRTStar(RRT):
         new_node.parent = self.node_list[min_ind]
         new_node.cost = min_cost
         new_node.alpha = math.atan2(new_node.y - new_node.parent.y, new_node.x - new_node.parent.x)
+        # distance between new node and its parent
+        d, _ = self.calc_distance_and_angle(new_node.parent, new_node)
+        new_node.d = d
 
         return new_node
 
@@ -198,17 +202,18 @@ class RRTStar(RRT):
         distance_cost = from_node.cost + d
 
         # Curvature cost
-        if d == 0:
+        if d == 0 or from_node.d == 0:
             curvature_cost = float('Inf')
         else:
-            to_node.rho = (2*math.tan(abs( from_node.alpha - to_node.alpha ))) / d
+            to_node.rho = (2*math.tan(abs( from_node.alpha - to_node.alpha ))) / min(from_node.d, d)
             # initialize counter
+            curvature_cost = from_node.rho + to_node.rho
+
             RRTStar.curvature_cost.counter = 0
-
             rho_sum = self.curvature_cost(from_node)
-            curvature_cost = rho_sum/RRTStar.curvature_cost.counter + to_node.rho
+            #curvature_cost = rho_sum/RRTStar.curvature_cost.counter + to_node.rho
 
-        return distance_cost
+        return curvature_cost
 
     def propagate_cost_to_leaves(self, parent_node):
 
@@ -248,10 +253,10 @@ def main():
                        goal = [90, 90, 0], # [x, y, theta]
                        obstacle_list = obstacleList,
                        rand_area = [0, 100],
-                       expand_dis = 3,
+                       expand_dis = 10,
                        path_resolution = 1,
                        goal_sample_rate = 10,
-                       max_iter = 3000,
+                       max_iter = 1500,
                        connect_circle_dist = 50)
     path = rrt_star.planning(animation=show_live_animation)
 
@@ -262,8 +267,6 @@ def main():
         # Print path
         for i in reversed(path):
             print(i)
-            #print(math.degrees(i[2]))
-            #print()
 
         # Draw final path
         if show_final_animation:
