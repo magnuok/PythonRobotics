@@ -20,12 +20,10 @@ try:
 except ImportError:
     raise
 
-
-show_live_animation = False
-show_final_animation = True
-
-
 def static_var(**kwargs):
+    """
+    This function creates decorator. Used for counting recursive calls.
+    """
     def decorate(func):
         for k in kwargs:
             setattr(func, k, kwargs[k])
@@ -233,7 +231,7 @@ class RRTStar(RRT):
 
     def propagate_cost_to_leaves(self, parent_node):
         """
-        When rewired, this function updates the cost.
+        When rewired, this function updates the costs of parents.
         """
         for node in self.node_list:
             if node.parent == parent_node:
@@ -265,10 +263,10 @@ class RRTStar(RRT):
             c_c =( max(self.get_max_kappa(from_node), kappa_next) 
                 + (self.get_sum_c_c(from_node) + kappa_next) / (RRTStar.get_sum_c_c.counter) )
         
-        return c_c # c_d, c_o or c_c
+        return c_o # c_d, c_o or c_c
 
 
-    """Utils """
+    """ --- Utils --- """
 
     @staticmethod
     def ssa(angle):
@@ -320,18 +318,20 @@ class RRTStar(RRT):
         return path
 
 def main():
-    print("Start " + __file__)
+    #print("Start " + __file__)
 
-    # ====Search Path with RRT====
+    show_live_animation = False
+    show_final_animation = True
 
-    obstacleList = [ # [x, y, radius]
+    # [x, y, radius]
+    obstacleList = [
         (2, 10, 2),
         (8, 10, 2),
         (17, 3, 3)
-        ] # (2, 10, 1),
+        ]
 
     # Set Initial parameters
-    rrt_star = RRTStar(start = [0, 0, 0], # [x, y, theta]
+    rrt_star = RRTStar(start = [0, 0, math.pi/2], # [x, y, theta]
                        goal = [8, 20, math.pi/2], # [x, y, theta]
                        obstacle_list = obstacleList,
                        rand_area = [0, 20],
@@ -340,12 +340,13 @@ def main():
                        goal_sample_rate = 5,
                        max_iter = 3000,
                        connect_circle_dist = 20)
+
     path = rrt_star.planning(animation=show_live_animation)
 
     if path is None:
         print("Cannot find path")
     else:
-        print("found path!!")
+        print("Found path")
         # Print path
         for i in reversed(path):
             print(i)
@@ -357,7 +358,6 @@ def main():
             plt.grid(True)
             plt.pause(0.01)  # Need for Mac
             plt.show()
-
 
 if __name__ == '__main__':
     main()
