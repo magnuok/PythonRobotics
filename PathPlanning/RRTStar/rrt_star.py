@@ -42,7 +42,7 @@ class RRTStar(RRT):
         def __init__(self, x, y, alpha):
             super().__init__(x, y, alpha)
             self.cost = 0.0
-            self.rho = 0.0
+            self.kappa = 0.0
             self.d = 1.0
 
     def __init__(self, start, goal, obstacle_list, rand_area,
@@ -135,16 +135,26 @@ class RRTStar(RRT):
         new_node = self.steer(self.node_list[min_ind], new_node)
         new_node.parent = self.node_list[min_ind]
         new_node.cost = min_cost
-        new_node.alpha = math.atan2(new_node.y - new_node.parent.y, new_node.x - new_node.parent.x)
-        d, _ = self.calc_distance_and_angle(new_node.parent, new_node)
-        new_node.d = d
-        if d == 0 or new_node.parent.d == 0 or abs(self.ssa(new_node.parent.alpha - new_node.alpha)) >= math.pi/2: # TODO 
-            new_node.rho = float("Inf")
-        else:
-            new_node.rho = (2*math.tan(abs(self.ssa(new_node.parent.alpha - new_node.alpha)))) / min(new_node.parent.d, new_node.d)
 
+        new_node = self.update_node_values(new_node)
 
         return new_node
+
+    def update_node_values(self, node):
+        """
+        Updates values for new or rewired node.
+        """
+        node.alpha = math.atan2(node.y - node.parent.y, node.x - node.parent.x)
+
+        d, _ = self.calc_distance_and_angle(node.parent, node)
+        node.d = d
+
+        if d == 0 or node.parent.d == 0 or abs(self.ssa(node.parent.alpha - node.alpha)) > math.pi/2:
+            node.kappa = float("Inf")
+        else:
+            node.kappa = (2*math.tan(abs(self.ssa(node.parent.alpha - node.alpha)))) / min(node.parent.d, node.d)
+        
+        return node
 
     def search_best_goal_node(self):
         dist_to_goal_list = [self.calc_dist_to_goal(n.x, n.y) for n in self.node_list]
@@ -215,27 +225,31 @@ class RRTStar(RRT):
                 self.propagate_cost_to_leaves(new_node)
 
     def calc_new_cost(self, from_node, to_node):
+        """
+        Calculate cost functions. TODO: Now only one used at a time. Tuning and superpos. must be done.
+        c_d - distance cost
+        c_c - curvature cost
+        c_o - obstacle cost
+        """
         # Distance cost
         d, _ = self.calc_distance_and_angle(from_node, to_node)
-        distance_cost = from_node.cost + d
+        c_d = from_node.cost + d
 
-        alpha_next = math.atan2(to_node.y - from_node.y, to_node.x - from_node.x)
-        # Curvature cost
-        if d == 0 or from_node.d == 0 or abs(self.ssa(from_node.alpha - alpha_next)) > math.pi/2:
-            curvature_cost = float('Inf')
-        else:
-            # initialize counter and curvature
-            RRTStar.get_sum_curvature_cost.counter = 0
-            rho_next = (2*math.tan(abs(self.ssa(from_node.alpha - alpha_next)))) / min(from_node.d, d)
-            max_curvature = max(self.get_max_curvature(from_node), rho_next)
-            rho_sum = self.get_sum_curvature_cost(from_node) + rho_next
-            curvature_cost = max_curvature + rho_sum/(RRTStar.get_sum_curvature_cost.counter)
-        
         # Obstacle cost
-        obstacle_cost = from_node.cost + 1/self.get_min_obstacle_distance(to_node, self.obstacle_list)
+        c_o = from_node.cost + 1/self.get_min_obstacle_distance(to_node, self.obstacle_list)
 
+        # Curvature cost
+        alpha_next = math.atan2(to_node.y - from_node.y, to_node.x - from_node.x)
+        if d == 0 or from_node.d == 0 or abs(self.ssa(from_node.alpha - alpha_next)) > math.pi/2:
+            c_c = float('Inf')
+        else:
+            RRTStar.get_sum_curvature_cost.counter = 0
+            kappa_next = (2*math.tan(abs(self.ssa(from_node.alpha - alpha_next)))) / min(from_node.d, d)
 
-        return curvature_cost
+            c_c =( max(self.get_max_kappa(from_node), kappa_next) 
+                + (self.get_sum_c_c(from_node) + kappa_next) / (RRTStar.get_sum_curvature_cost.counter) )
+        
+        return c_d # c_o or c_c
 
     def propagate_cost_to_leaves(self, parent_node):
 
@@ -244,31 +258,44 @@ class RRTStar(RRT):
                 node.cost = self.calc_new_cost(parent_node, node)
                 self.propagate_cost_to_leaves(node)
 
-    def ssa(self, angle):
-        # Smallest signed angle. Maps angle into interval [-pi pi]
+    """Utils """
+
+    @staticmethod
+    def ssa(angle):
+        """
+        Smallest signed angle. Maps angle into interval [-pi pi]
+        """
         wrpd_angle = (angle + math.pi) % (2*math.pi) - math.pi
         return wrpd_angle
 
     @static_var(counter=0)
-    def get_sum_curvature_cost(self, from_node):
+    def get_sum_c_c(self, from_node):
+        """
+        Finds sum of curvature cost.
+        """
+
         # stash counter in the function itself
         RRTStar.get_sum_curvature_cost.counter += 1
         if from_node.parent == None:
             return 0
         return from_node.cost + self.get_sum_curvature_cost(from_node.parent)
 
-    def get_max_curvature(self, from_node):
-        if from_node.parent == None:
+    @staticmethod
+    def get_max_kappa(node):
+        """
+        Finds maximum curvature from node to root, recursively.
+        """
+        if node.parent == None:
             return 0
-        return max(from_node.cost, self.get_max_curvature(from_node.parent))
+        return max(node.cost, self.get_max_kappa(node.parent))
 
-    def get_min_obstacle_distance(self, to_node, obstacleList):
-        dx_list = [ ox - to_node.x for (ox, oy, size) in obstacleList]
-        dy_list = [ oy - to_node.y for (ox, oy, size) in obstacleList]
+    @staticmethod
+    def get_min_obstacle_distance(node, obstacleList):
+        dx_list = [ ox - node.x for (ox, oy, size) in obstacleList]
+        dy_list = [ oy - node.y for (ox, oy, size) in obstacleList]
         d_list = [math.sqrt(dx * dx + dy * dy) for (dx, dy) in zip(dx_list, dy_list)]
-        min_distance = min(d_list)
-        return min_distance
 
+        return min(d_list)
 
     def generate_final_cost(self, goal_ind):
         path = [[self.end.x, self.end.y, self.end.alpha, self.end.cost]]
@@ -292,7 +319,7 @@ def main():
         ] # (2, 10, 1),
 
     # Set Initial parameters
-    rrt_star = RRTStar(start = [0, 0, math.pi/4], # [x, y, theta]
+    rrt_star = RRTStar(start = [0, 0, math.pi/3], # [x, y, theta]
                        goal = [8, 20, math.pi/2], # [x, y, theta]
                        obstacle_list = obstacleList,
                        rand_area = [0, 20],
