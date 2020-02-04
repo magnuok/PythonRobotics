@@ -209,6 +209,10 @@ class RRTStar(RRT):
         """
 
     def rewire(self, new_node, near_inds):
+        """
+        This function checks if the cost to the nodes in near_inds is less through new_node as compared to their older costs, 
+        then its parent is changed to new_node.
+        """
         for i in near_inds:
             near_node = self.node_list[i]
             edge_node = self.steer(new_node, near_node)
@@ -222,7 +226,19 @@ class RRTStar(RRT):
             if no_collision and improved_cost:
                 near_node = edge_node
                 near_node.parent = new_node
+                # Update values
+                near_node = self.update_node_values(near_node)
+
                 self.propagate_cost_to_leaves(new_node)
+
+    def propagate_cost_to_leaves(self, parent_node):
+        """
+        When rewired, this function updates the cost.
+        """
+        for node in self.node_list:
+            if node.parent == parent_node:
+                node.cost = self.calc_new_cost(parent_node, node)
+                self.propagate_cost_to_leaves(node)
 
     def calc_new_cost(self, from_node, to_node):
         """
@@ -243,20 +259,14 @@ class RRTStar(RRT):
         if d == 0 or from_node.d == 0 or abs(self.ssa(from_node.alpha - alpha_next)) > math.pi/2:
             c_c = float('Inf')
         else:
-            RRTStar.get_sum_curvature_cost.counter = 0
+            RRTStar.get_sum_c_c.counter = 0
             kappa_next = (2*math.tan(abs(self.ssa(from_node.alpha - alpha_next)))) / min(from_node.d, d)
 
             c_c =( max(self.get_max_kappa(from_node), kappa_next) 
-                + (self.get_sum_c_c(from_node) + kappa_next) / (RRTStar.get_sum_curvature_cost.counter) )
+                + (self.get_sum_c_c(from_node) + kappa_next) / (RRTStar.get_sum_c_c.counter) )
         
-        return c_d # c_o or c_c
+        return c_c # c_d, c_o or c_c
 
-    def propagate_cost_to_leaves(self, parent_node):
-
-        for node in self.node_list:
-            if node.parent == parent_node:
-                node.cost = self.calc_new_cost(parent_node, node)
-                self.propagate_cost_to_leaves(node)
 
     """Utils """
 
@@ -271,14 +281,13 @@ class RRTStar(RRT):
     @static_var(counter=0)
     def get_sum_c_c(self, from_node):
         """
-        Finds sum of curvature cost.
+        Finds sum of curvature cost, recursively. The static variable keeps track of depth/#parents
         """
-
         # stash counter in the function itself
-        RRTStar.get_sum_curvature_cost.counter += 1
+        RRTStar.get_sum_c_c.counter += 1
         if from_node.parent == None:
             return 0
-        return from_node.cost + self.get_sum_curvature_cost(from_node.parent)
+        return from_node.cost + self.get_sum_c_c(from_node.parent)
 
     @staticmethod
     def get_max_kappa(node):
@@ -287,10 +296,13 @@ class RRTStar(RRT):
         """
         if node.parent == None:
             return 0
-        return max(node.cost, self.get_max_kappa(node.parent))
+        return max(node.cost, RRTStar.get_max_kappa(node.parent))
 
     @staticmethod
     def get_min_obstacle_distance(node, obstacleList):
+        """
+        Finds minimum distance to obstacle from node.
+        """
         dx_list = [ ox - node.x for (ox, oy, size) in obstacleList]
         dy_list = [ oy - node.y for (ox, oy, size) in obstacleList]
         d_list = [math.sqrt(dx * dx + dy * dy) for (dx, dy) in zip(dx_list, dy_list)]
@@ -319,14 +331,14 @@ def main():
         ] # (2, 10, 1),
 
     # Set Initial parameters
-    rrt_star = RRTStar(start = [0, 0, math.pi/3], # [x, y, theta]
+    rrt_star = RRTStar(start = [0, 0, 0], # [x, y, theta]
                        goal = [8, 20, math.pi/2], # [x, y, theta]
                        obstacle_list = obstacleList,
                        rand_area = [0, 20],
                        expand_dis = 1,
                        path_resolution = 0.1,
                        goal_sample_rate = 5,
-                       max_iter = 2000,
+                       max_iter = 3000,
                        connect_circle_dist = 20)
     path = rrt_star.planning(animation=show_live_animation)
 
