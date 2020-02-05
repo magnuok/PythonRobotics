@@ -10,6 +10,7 @@ import math
 import os
 import sys
 import numpy as np
+import random
 
 import matplotlib.pyplot as plt
 
@@ -91,12 +92,12 @@ class RRTStar(RRT):
         solutionSet = set()
         path = None
          # Computing the sampling space
-        cMin = math.sqrt(pow(self.start.x - self.goal.x, 2)
-                         + pow(self.start.y - self.goal.y, 2))
-        xCenter = np.array([[(self.start.x + self.goal.x) / 2.0],
-                            [(self.start.y + self.goal.y) / 2.0], [0]])
-        a1 = np.array([[(self.goal.x - self.start.x) / cMin],
-                       [(self.goal.y - self.start.y) / cMin], [0]])
+        cMin = math.sqrt(pow(self.start.x - self.end.x, 2)
+                         + pow(self.start.y - self.end.y, 2))
+        xCenter = np.array([[(self.start.x + self.end.x) / 2.0],
+                            [(self.start.y + self.end.y) / 2.0], [0]])
+        a1 = np.array([[(self.end.x - self.start.x) / cMin],
+                       [(self.end.y - self.start.y) / cMin], [0]])
 
         etheta = math.atan2(a1[1], a1[0])
         # first column of idenity matrix transposed
@@ -110,13 +111,14 @@ class RRTStar(RRT):
         # cMin is the minimum distance between the start point and the goal
         # xCenter is the midpoint between the start and the goal
         # cBest changes when a new path is found
-        
+
         for i in range(self.max_iter):
 
-            rnd_node = self.get_random_node()
+            #rnd_node = self.get_random_node()
+            rnd_node = self.informed_sample(cBest, cMin, xCenter, C)
+
             # Get nearest index of rnd node.
             nearest_ind = self.get_nearest_node_index(self.node_list, rnd_node)
-
             new_node = self.steer(self.node_list[nearest_ind], rnd_node, self.expand_dis)
 
             if self.check_collision(new_node, self.obstacle_list):
@@ -127,21 +129,127 @@ class RRTStar(RRT):
                     self.node_list.append(new_node)
                     self.rewire(new_node, near_inds)
 
-            if animation and i % 1 == 0:
-                self.draw_graph(rnd_node)
+                    # Informed RRT star
+                    if self.is_near_goal(new_node):
+                            if self.check_segment_collision(new_node.x, new_node.y, self.goal_node.x , self.goal_node.y):
+                                solutionSet.add(new_node)
+                                lastIndex = len(self.node_list) - 1
+                                tempPath = self.generate_final_path_values(lastIndex)
+                                tempPathLen = self.get_path_len(tempPath)
+                                if tempPathLen < cBest:
+                                    path = tempPath
+                                    cBest = tempPathLen
 
-            if (not search_until_max_iter) and new_node:  # check reaching the goal
-                last_index = self.search_best_goal_node()
-                if last_index:
-                    return self.generate_final_cost(last_index)
+            if animation and i % 30 == 0:
+                self.draw_graph(xCenter=xCenter,
+                                cBest=cBest, cMin=cMin,
+                                etheta=etheta, rnd=rnd_node)
 
-        print("Reached max iteration")
+            #if (not search_until_max_iter) and new_node:  # check reaching the goal
+            #    last_index = self.search_best_goal_node()
+            #    if last_index:
+            #        return self.generate_final_cost(last_index)
 
-        last_index = self.search_best_goal_node()
-        if last_index:
-            return self.generate_final_path_values(last_index)
 
-        return None
+        #last_index = self.search_best_goal_node()
+        #if last_index:
+        #    return self.generate_final_path_values(last_index)
+
+        return path
+
+    def informed_sample(self, cMax, cMin, xCenter, C):
+        if cMax < float('inf'):
+            r = [cMax / 2.0,
+                 math.sqrt(cMax ** 2 - cMin ** 2) / 2.0,
+                 math.sqrt(cMax ** 2 - cMin ** 2) / 2.0]
+            L = np.diag(r)
+            xBall = self.sample_unit_ball()
+            rnd = np.dot(np.dot(C, L), xBall) + xCenter
+            rnd = self.Node(rnd[(0, 0)], rnd[(1, 0)], 0)
+        else:
+            rnd = self.sample_free_space()
+        
+        return rnd
+
+    @staticmethod
+    def sample_unit_ball():
+        a = random.random()
+        b = random.random()
+
+        if b < a:
+            a, b = b, a
+
+        sample = (b * math.cos(2 * math.pi * a / b),
+                  b * math.sin(2 * math.pi * a / b))
+
+        return np.array([[sample[0]], [sample[1]], [0]])
+
+    def sample_free_space(self):
+        """
+        Sample from whole free space. Does the same as get_random_node()
+        """
+        if random.randint(0, 100) > self.goal_sample_rate:
+            rnd = self.Node(random.uniform(self.min_rand, self.max_rand),
+                   random.uniform(self.min_rand, self.max_rand), 0)
+        else:
+            rnd = self.Node(self.end.x, self.end.y, 0)
+        return rnd
+
+    @staticmethod
+    def get_path_len(path):
+        pathLen = 0
+        for i in range(1, len(path)):
+            node1_x = path[i][0]
+            node1_y = path[i][1]
+            node2_x = path[i - 1][0]
+            node2_y = path[i - 1][1]
+            pathLen += math.sqrt((node1_x - node2_x)
+                                 ** 2 + (node1_y - node2_y) ** 2)
+
+        return pathLen
+
+    @staticmethod
+    def line_cost(node1, node2):
+        return math.sqrt((node1.x - node2.x) ** 2 + (node1.y - node2.y) ** 2)
+
+    def get_final_course(self, lastIndex):
+        path = [[self.goal.x, self.goal.y]]
+        while self.node_list[lastIndex].parent is not None:
+            node = self.node_list[lastIndex]
+            path.append([node.x, node.y])
+            lastIndex = node.parent
+        path.append([self.start.x, self.start.y])
+        return path
+
+    def is_near_goal(self, node):
+        d = self.line_cost(node, self.goal_node)
+        if d < self.expand_dis:
+            return True
+        return False
+
+    def check_segment_collision(self, x1, y1, x2, y2):
+        for (ox, oy, size) in self.obstacle_list:
+            dd = self.distance_squared_point_to_segment(
+                np.array([x1, y1]),
+                np.array([x2, y2]),
+                np.array([ox, oy]))
+            if dd <= size**2:
+                return False  # collision
+        return True
+
+    @staticmethod
+    def distance_squared_point_to_segment(v, w, p):
+        # Return minimum distance between line segment vw and point p
+        if (np.array_equal(v, w)):
+            return (p-v).dot(p-v) # v == w case
+        l2 = (w-v).dot(w-v) # i.e. |w-v|^2 -  avoid a sqrt
+        # Consider the line extending the segment, parameterized as v + t (w - v).
+        # We find projection of point p onto the line.
+        # It falls where t = [(p-v) . (w-v)] / |w-v|^2
+        # We clamp t from [0,1] to handle points outside the segment vw.
+        t = max(0, min(1, (p - v).dot(w - v) / l2))
+        projection = v + t * (w - v) # Projection falls on the segment
+        return (p-projection).dot(p-projection)
 
     def choose_parent(self, new_node, filtered_inds):
         # If no one close, return None and throw away the new_node
@@ -301,7 +409,7 @@ class RRTStar(RRT):
             c_c =( max(self.get_max_kappa(from_node), kappa_next) 
                 + (self.get_sum_c_c(from_node) + kappa_next) / (RRTStar.get_sum_c_c.counter) )
         
-        return c_d # c_d, c_o or c_c
+        return c_c # c_d, c_o or c_c
 
 
     """ --- Utils --- """
@@ -355,10 +463,62 @@ class RRTStar(RRT):
 
         return path
 
+    def draw_graph(self, xCenter=None, cBest=None, cMin=None, etheta=None, rnd=None):
+        plt.clf()
+        # for stopping simulation with the esc key.
+        plt.gcf().canvas.mpl_connect('key_release_event',
+                lambda event: [exit(0) if event.key == 'escape' else None])
+        if rnd is not None:
+            plt.plot(rnd.x, rnd.y, "^k")
+            if cBest != float('inf'):
+                self.plot_ellipse(xCenter, cBest, cMin, etheta)
+
+        for node in self.node_list:
+            # Node/vertex itself
+            plt.plot(node.x, node.y, "y.")
+            if node.parent:
+                # edge between nodes
+                plt.plot(node.path_x, node.path_y, "-g")
+
+        for (ox, oy, size) in self.obstacle_list:
+            self.plot_circle(ox, oy, size)
+
+        plt.plot(self.start.x, self.start.y, "xr")
+        plt.plot(self.end.x, self.end.y, "xr")
+        plt.axis("equal")
+        plt.axis([self.min_rand, self.max_rand, self.min_rand, self.max_rand])
+        plt.grid(True)
+        plt.pause(0.01)
+        # Plot borders for area
+        plt.plot([self.min_rand, self.max_rand], [self.min_rand, self.min_rand], "k--")
+        plt.plot([self.min_rand, self.min_rand], [self.min_rand, self.max_rand], "k--")
+        plt.plot([self.min_rand, self.max_rand], [self.max_rand, self.max_rand], "k--")
+        plt.plot([self.max_rand, self.max_rand], [self.min_rand, self.max_rand], "k--")
+
+    @staticmethod
+    def plot_ellipse(xCenter, cBest, cMin, etheta):  # pragma: no cover
+
+        a = math.sqrt(cBest ** 2 - cMin ** 2) / 2.0
+        b = cBest / 2.0
+        angle = math.pi / 2.0 - etheta
+        cx = xCenter[0]
+        cy = xCenter[1]
+
+        t = np.arange(0, 2 * math.pi + 0.1, 0.1)
+        x = [a * math.cos(it) for it in t]
+        y = [b * math.sin(it) for it in t]
+        R = np.array([[math.cos(angle), math.sin(angle)],
+                      [-math.sin(angle), math.cos(angle)]])
+        fx = R @ np.array([x, y])
+        px = np.array(fx[0, :] + cx).flatten()
+        py = np.array(fx[1, :] + cy).flatten()
+        plt.plot(cx, cy, "xc")
+        plt.plot(px, py, "--c")
+
 def main():
     #print("Start " + __file__)
 
-    show_live_animation = False
+    show_live_animation = True
     show_final_animation = True
 
     # [x, y, radius]
@@ -369,17 +529,17 @@ def main():
         ]
 
     # Set Initial parameters
-    rrt_star = RRTStar(start = [0, 0, 0], # [x, y, theta]
-                       goal = [8, 20, math.pi/2], # [x, y, theta]
+    rrt_star = RRTStar(start = [4, 0, math.pi/4], # [x, y, theta]
+                       goal = [10, 15, math.pi/2], # [x, y, theta]
                        obstacle_list = obstacleList,
                        rand_area = [0, 20],
                        expand_dis = 1,
                        path_resolution = 0.1,
                        goal_sample_rate = 5,
-                       max_iter = 1000,
+                       max_iter = 500,
                        connect_circle_dist = 20,
                        max_alpha = math.pi/2,
-                       max_kappa = 2)
+                       max_kappa = 1)
 
     path = rrt_star.planning(animation=show_live_animation)
 
