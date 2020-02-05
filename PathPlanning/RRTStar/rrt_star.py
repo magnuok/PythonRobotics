@@ -83,34 +83,15 @@ class RRTStar(RRT):
         animation: flag for animation on or off
         search_until_max_iter: search until max iteration for path improving or not
         """
-        
+
         self.node_list = [self.start]
-                
-        # TODO: Informed RRT*
-        # max length we expect to find in our 'informed' sample space, starts as infinite
-        cBest = float('inf')
         solutionSet = set()
         path = None
-         # Computing the sampling space
-        cMin = math.sqrt(pow(self.start.x - self.end.x, 2)
-                         + pow(self.start.y - self.end.y, 2))
-        xCenter = np.array([[(self.start.x + self.end.x) / 2.0],
-                            [(self.start.y + self.end.y) / 2.0], [0]])
-        a1 = np.array([[(self.end.x - self.start.x) / cMin],
-                       [(self.end.y - self.start.y) / cMin], [0]])
 
-        etheta = math.atan2(a1[1], a1[0])
-        # first column of idenity matrix transposed
-        id1_t = np.array([1.0, 0.0, 0.0]).reshape(1, 3)
-        M = a1 @ id1_t
-        U, S, Vh = np.linalg.svd(M, True, True)
-        C = np.dot(np.dot(U, np.diag(
-            [1.0, 1.0, np.linalg.det(U) * np.linalg.det(np.transpose(Vh))])), Vh)
-
-        # Sample space is defined by cBest
-        # cMin is the minimum distance between the start point and the goal
-        # xCenter is the midpoint between the start and the goal
-        # cBest changes when a new path is found
+        # max length we expect to find in our 'informed' sample space, starts as infinite        
+        cBest = float('inf')
+        cMin, xCenter, a1, etheta = self.compute_sampling_space(self.start, self.goal_node)
+        C = self.rotation_to_world_frame(a1)
 
         for i in range(self.max_iter):
 
@@ -145,19 +126,12 @@ class RRTStar(RRT):
                                 cBest=cBest, cMin=cMin,
                                 etheta=etheta, rnd=rnd_node)
 
-            #if (not search_until_max_iter) and new_node:  # check reaching the goal
-            #    last_index = self.search_best_goal_node()
-            #    if last_index:
-            #        return self.generate_final_cost(last_index)
-
-
-        #last_index = self.search_best_goal_node()
-        #if last_index:
-        #    return self.generate_final_path_values(last_index)
-
         return path
 
     def informed_sample(self, cMax, cMin, xCenter, C):
+        """
+        Performe a informed sample. Returns independent and identically distributed (i.i.d.) samples from the state space.
+        """
         if cMax < float('inf'):
             r = [cMax / 2.0,
                  math.sqrt(cMax ** 2 - cMin ** 2) / 2.0,
@@ -171,19 +145,6 @@ class RRTStar(RRT):
         
         return rnd
 
-    @staticmethod
-    def sample_unit_ball():
-        a = random.random()
-        b = random.random()
-
-        if b < a:
-            a, b = b, a
-
-        sample = (b * math.cos(2 * math.pi * a / b),
-                  b * math.sin(2 * math.pi * a / b))
-
-        return np.array([[sample[0]], [sample[1]], [0]])
-
     def sample_free_space(self):
         """
         Sample from whole free space. Does the same as get_random_node()
@@ -195,23 +156,6 @@ class RRTStar(RRT):
             rnd = self.Node(self.end.x, self.end.y, 0)
         return rnd
 
-    @staticmethod
-    def get_path_len(path):
-        pathLen = 0
-        for i in range(1, len(path)):
-            node1_x = path[i][0]
-            node1_y = path[i][1]
-            node2_x = path[i - 1][0]
-            node2_y = path[i - 1][1]
-            pathLen += math.sqrt((node1_x - node2_x)
-                                 ** 2 + (node1_y - node2_y) ** 2)
-
-        return pathLen
-
-    @staticmethod
-    def line_cost(node1, node2):
-        return math.sqrt((node1.x - node2.x) ** 2 + (node1.y - node2.y) ** 2)
-
     def get_final_course(self, lastIndex):
         path = [[self.goal.x, self.goal.y]]
         while self.node_list[lastIndex].parent is not None:
@@ -222,6 +166,9 @@ class RRTStar(RRT):
         return path
 
     def is_near_goal(self, node):
+        """
+         Given a pose, the function is_near_goal returns True if and only if the state is in the goal region, as defined.
+        """
         d = self.line_cost(node, self.goal_node)
         if d < self.expand_dis:
             return True
@@ -236,20 +183,6 @@ class RRTStar(RRT):
             if dd <= size**2:
                 return False  # collision
         return True
-
-    @staticmethod
-    def distance_squared_point_to_segment(v, w, p):
-        # Return minimum distance between line segment vw and point p
-        if (np.array_equal(v, w)):
-            return (p-v).dot(p-v) # v == w case
-        l2 = (w-v).dot(w-v) # i.e. |w-v|^2 -  avoid a sqrt
-        # Consider the line extending the segment, parameterized as v + t (w - v).
-        # We find projection of point p onto the line.
-        # It falls where t = [(p-v) . (w-v)] / |w-v|^2
-        # We clamp t from [0,1] to handle points outside the segment vw.
-        t = max(0, min(1, (p - v).dot(w - v) / l2))
-        projection = v + t * (w - v) # Projection falls on the segment
-        return (p-projection).dot(p-projection)
 
     def choose_parent(self, new_node, filtered_inds):
         # If no one close, return None and throw away the new_node
@@ -413,6 +346,89 @@ class RRTStar(RRT):
 
 
     """ --- Utils --- """
+
+    @staticmethod
+    def rotation_to_world_frame(a1):
+        """
+         Given two poses as the focal points of a hyperellipsoid, xfrom, xto ∈ X, the function RotationToWorldFrame (xfrom, xto) 
+         returns the rotation matrix, R element in SO(2), from the hyperellipsoid-aligned frame to the NED-frame
+        """
+        # first column of idenity matrix transposed
+        id1_t = np.array([1.0, 0.0, 0.0]).reshape(1, 3)
+        M = a1 @ id1_t
+        U, S, Vh = np.linalg.svd(M, True, True)
+        R = np.dot(np.dot(U, np.diag(
+            [1.0, 1.0, np.linalg.det(U) * np.linalg.det(np.transpose(Vh))])), Vh)
+        
+        return R
+
+    @staticmethod
+    def compute_sampling_space(start_node, goal_node):
+        """
+        Computes values for the heuristic sampling domain, formed by an ellipse.
+        Sample space is defined by cBest
+        cMin is the minimum distance between the start point and the goal
+        xCenter is the midpoint between the start and the goal
+        cBest changes when a new path is found
+        """
+        cMin = math.sqrt(pow(start_node.x - goal_node.x, 2)
+                         + pow(start_node.y - goal_node.y, 2))
+        xCenter = np.array([[(start_node.x + goal_node.x) / 2.0],
+                            [(start_node.y + goal_node.y) / 2.0], [0]])
+        a1 = np.array([[(goal_node.x - start_node.x) / cMin],
+                       [(goal_node.y - start_node.y) / cMin], [0]])
+
+        etheta = math.atan2(a1[1], a1[0])
+
+        return cMin, xCenter, a1, etheta
+
+    @staticmethod
+    def sample_unit_ball():
+        """
+        The function, sample_unit_ball returns a uniform sample from the volume of an circle of 
+        unit radius centred at the origin.
+        """
+        a = random.random()
+        b = random.random()
+
+        if b < a:
+            a, b = b, a
+
+        sample = (b * math.cos(2 * math.pi * a / b),
+                  b * math.sin(2 * math.pi * a / b))
+
+        return np.array([[sample[0]], [sample[1]], [0]])
+
+    @staticmethod
+    def get_path_len(path):
+        pathLen = 0
+        for i in range(1, len(path)):
+            node1_x = path[i][0]
+            node1_y = path[i][1]
+            node2_x = path[i - 1][0]
+            node2_y = path[i - 1][1]
+            pathLen += math.sqrt((node1_x - node2_x)
+                                 ** 2 + (node1_y - node2_y) ** 2)
+
+        return pathLen
+
+    @staticmethod
+    def line_cost(node1, node2):
+        return math.sqrt((node1.x - node2.x) ** 2 + (node1.y - node2.y) ** 2)
+
+    @staticmethod
+    def distance_squared_point_to_segment(v, w, p):
+        # Return minimum distance between line segment vw and point p
+        if (np.array_equal(v, w)):
+            return (p-v).dot(p-v) # v == w case
+        l2 = (w-v).dot(w-v) # i.e. |w-v|^2 -  avoid a sqrt
+        # Consider the line extending the segment, parameterized as v + t (w - v).
+        # We find projection of point p onto the line.
+        # It falls where t = [(p-v) . (w-v)] / |w-v|^2
+        # We clamp t from [0,1] to handle points outside the segment vw.
+        t = max(0, min(1, (p - v).dot(w - v) / l2))
+        projection = v + t * (w - v) # Projection falls on the segment
+        return (p-projection).dot(p-projection)
 
     @staticmethod
     def ssa(angle):
