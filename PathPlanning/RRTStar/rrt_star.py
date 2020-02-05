@@ -84,7 +84,33 @@ class RRTStar(RRT):
         """
         
         self.node_list = [self.start]
+                
+        # TODO: Informed RRT*
+        # max length we expect to find in our 'informed' sample space, starts as infinite
+        cBest = float('inf')
+        solutionSet = set()
+        path = None
+         # Computing the sampling space
+        cMin = math.sqrt(pow(self.start.x - self.goal.x, 2)
+                         + pow(self.start.y - self.goal.y, 2))
+        xCenter = np.array([[(self.start.x + self.goal.x) / 2.0],
+                            [(self.start.y + self.goal.y) / 2.0], [0]])
+        a1 = np.array([[(self.goal.x - self.start.x) / cMin],
+                       [(self.goal.y - self.start.y) / cMin], [0]])
 
+        etheta = math.atan2(a1[1], a1[0])
+        # first column of idenity matrix transposed
+        id1_t = np.array([1.0, 0.0, 0.0]).reshape(1, 3)
+        M = a1 @ id1_t
+        U, S, Vh = np.linalg.svd(M, True, True)
+        C = np.dot(np.dot(U, np.diag(
+            [1.0, 1.0, np.linalg.det(U) * np.linalg.det(np.transpose(Vh))])), Vh)
+
+        # Sample space is defined by cBest
+        # cMin is the minimum distance between the start point and the goal
+        # xCenter is the midpoint between the start and the goal
+        # cBest changes when a new path is found
+        
         for i in range(self.max_iter):
 
             rnd_node = self.get_random_node()
