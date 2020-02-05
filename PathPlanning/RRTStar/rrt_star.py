@@ -30,6 +30,12 @@ def static_var(**kwargs):
         return func
     return decorate
 
+class prettyfloat(float):
+    """
+    Class for printing float with given precision
+    """
+    def __repr__(self):
+        return "%0.2f" % self
 
 class RRTStar(RRT):
     """
@@ -41,14 +47,16 @@ class RRTStar(RRT):
             super().__init__(x, y, alpha)
             self.cost = 0.0
             self.kappa = 0.0
-            self.d = 1.0
+            self.d = float("Inf")
 
     def __init__(self, start, goal, obstacle_list, rand_area,
                  expand_dis,
                  path_resolution,
                  goal_sample_rate,
                  max_iter,
-                 connect_circle_dist
+                 connect_circle_dist,
+                 max_alpha,
+                 max_kappa
                  ):
         super().__init__(start, goal, obstacle_list,
                          rand_area, expand_dis, path_resolution, goal_sample_rate, max_iter)
@@ -62,6 +70,8 @@ class RRTStar(RRT):
 
         """
         self.connect_circle_dist = connect_circle_dist
+        self.max_alpha = max_alpha
+        self.max_kappa = max_kappa
         self.goal_node = self.Node(goal[0], goal[1], goal[2])
 
     def planning(self, animation=True, search_until_max_iter=True):
@@ -99,11 +109,11 @@ class RRTStar(RRT):
                 if last_index:
                     return self.generate_final_cost(last_index)
 
-        print("reached max iteration")
+        print("Reached max iteration")
 
         last_index = self.search_best_goal_node()
         if last_index:
-            return self.generate_final_cost(last_index)
+            return self.generate_final_path_values(last_index)
 
         return None
 
@@ -147,7 +157,7 @@ class RRTStar(RRT):
         d, _ = self.calc_distance_and_angle(node.parent, node)
         node.d = d
 
-        if d == 0 or node.parent.d == 0 or abs(self.ssa(node.parent.alpha - node.alpha)) > math.pi/2:
+        if d == 0 or node.parent.d == 0 or abs(self.ssa(node.parent.alpha - node.alpha)) > self.max_alpha:
             node.kappa = float("Inf")
         else:
             node.kappa = (2*math.tan(abs(self.ssa(node.parent.alpha - node.alpha)))) / min(node.parent.d, node.d)
@@ -190,21 +200,23 @@ class RRTStar(RRT):
         near_nodes = [self.node_list[i] for i in near_inds]
         angle_list = [abs( self.ssa(node.alpha - math.atan2(new_node.y - node.y, new_node.x - node.x))) for node in near_nodes]
 
-        filtered_inds1 = [near_inds[angle_list.index(i)] for i in angle_list if i <= math.pi/2]
-
-        return filtered_inds1
-        """
-        filtered_inds2 = []
-        for i in filtered_inds1:
-            node = self.node_list[i]
+        curvature_list = []
+        for node in near_nodes:
             d, _ = self.calc_distance_and_angle(node, new_node)
-            if node.d==0 or d==0:
-                curvature = float("Inf")
+            alpha_next = math.atan2(new_node.y - node.y, new_node.x - node.x)
+            if d == 0 or node.d == 0 or abs(self.ssa(node.alpha - alpha_next)) > self.max_alpha:
+                kappa_next = float('Inf')
             else:
-                curvature = (2*math.tan(abs(self.ssa(node.alpha - math.atan2(new_node.y - node.y, new_node.x - node.x))))) / min(node.d, d)
-            if curvature <= 10:
-                filtered_inds2.append(i)
-        """
+                kappa_next = (2*math.tan(abs(self.ssa(node.alpha - alpha_next)))) / min(node.d, d)
+
+            curvature_list.append(kappa_next)
+
+        filtered_inds = [near_inds[angle_list.index(alpha)] for alpha, kappa in zip(angle_list, curvature_list) if alpha <= self.max_alpha and kappa <= self.max_kappa]
+
+        # For nearby nodes, filter nodes by curvature constraint
+
+
+        return filtered_inds
 
     def rewire(self, new_node, near_inds):
         """
@@ -254,7 +266,7 @@ class RRTStar(RRT):
 
         # Curvature cost
         alpha_next = math.atan2(to_node.y - from_node.y, to_node.x - from_node.x)
-        if d == 0 or from_node.d == 0 or abs(self.ssa(from_node.alpha - alpha_next)) > math.pi/2:
+        if d == 0 or from_node.d == 0 or abs(self.ssa(from_node.alpha - alpha_next)) > self.max_alpha:
             c_c = float('Inf')
         else:
             RRTStar.get_sum_c_c.counter = 0
@@ -263,7 +275,7 @@ class RRTStar(RRT):
             c_c =( max(self.get_max_kappa(from_node), kappa_next) 
                 + (self.get_sum_c_c(from_node) + kappa_next) / (RRTStar.get_sum_c_c.counter) )
         
-        return c_o # c_d, c_o or c_c
+        return c_d # c_d, c_o or c_c
 
 
     """ --- Utils --- """
@@ -307,13 +319,13 @@ class RRTStar(RRT):
 
         return min(d_list)
 
-    def generate_final_cost(self, goal_ind):
-        path = [[self.end.x, self.end.y, self.end.alpha, self.end.cost]]
+    def generate_final_path_values(self, goal_ind):
+        path = [[self.end.x, self.end.y, math.degrees(self.end.alpha), self.end.cost, 0, 0]]
         node = self.node_list[goal_ind]
         while node.parent is not None:
-            path.append([node.x, node.y, node.alpha, node.cost])
+            path.append([node.x, node.y, math.degrees(node.alpha), node.cost, node.d, node.kappa])
             node = node.parent
-        path.append([node.x, node.y, node.alpha, node.cost])
+        path.append([node.x, node.y, math.degrees(node.alpha), node.cost, node.d, node.kappa])
 
         return path
 
@@ -331,15 +343,17 @@ def main():
         ]
 
     # Set Initial parameters
-    rrt_star = RRTStar(start = [0, 0, math.pi/2], # [x, y, theta]
+    rrt_star = RRTStar(start = [0, 0, 0], # [x, y, theta]
                        goal = [8, 20, math.pi/2], # [x, y, theta]
                        obstacle_list = obstacleList,
                        rand_area = [0, 20],
                        expand_dis = 1,
                        path_resolution = 0.1,
                        goal_sample_rate = 5,
-                       max_iter = 3000,
-                       connect_circle_dist = 20)
+                       max_iter = 1000,
+                       connect_circle_dist = 20,
+                       max_alpha = math.pi/2,
+                       max_kappa = 2)
 
     path = rrt_star.planning(animation=show_live_animation)
 
@@ -347,14 +361,16 @@ def main():
         print("Cannot find path")
     else:
         print("Found path")
-        # Print path
+        print("\n  x,   y,  alpha,  cost,   d,  kappa")
+
         for i in reversed(path):
-            print(i)
+            i = map(prettyfloat, i)
+            print(list(i)) 
 
         # Draw final path
         if show_final_animation:
             rrt_star.draw_graph()
-            plt.plot([x for (x, y, alpha, cost) in path], [y for (x, y, alpha, cost) in path], '-r')
+            plt.plot([x for (x, y, alpha, cost, d, kappa) in path], [y for (x, y, alpha, cost, d, kappa) in path], '-r')
             plt.grid(True)
             plt.pause(0.01)  # Need for Mac
             plt.show()
