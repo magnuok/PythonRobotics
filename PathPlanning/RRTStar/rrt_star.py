@@ -9,6 +9,7 @@ author: Atsushi Sakai(@Atsushi_twi)
 import math
 import os
 import sys
+import numpy as np
 
 import matplotlib.pyplot as plt
 
@@ -81,11 +82,10 @@ class RRTStar(RRT):
         animation: flag for animation on or off
         search_until_max_iter: search until max iteration for path improving or not
         """
-        # Init node_list and include start position
+        
         self.node_list = [self.start]
 
         for i in range(self.max_iter):
-            #print("Iter:", i, ", number of nodes:", len(self.node_list))
 
             rnd_node = self.get_random_node()
             # Get nearest index of rnd node.
